@@ -1,0 +1,19 @@
+{
+  "name": "flami",
+  "version": "1.0.0",
+  "description": "flami framework",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "s": "nodemon main.js"
+  },
+  "keywords": [
+    "flami",
+    "framework"
+  ],
+  "author": "FlamiDev",
+  "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^2.0.15"
+  }
+}

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script src="https://unpkg.com/uhtml"></script>
+		<title>page</title>
+	</head>
+	<body>
+        <script>
+            let html = uhtml.html
+            let html_template, html_values
+            function flami(template, ...values) {
+                html_template = template
+                html_values = values
+                update()
+            }
+
+            function update() {
+                uhtml.render(document.querySelector('#flami-content'), html(html_template, ...html_values))
+            }
+        </script>
+		<section id="flami-content">
+            <script>
+                let servervars = /*=-vars-=*/
+                Object.entries(servervars).forEach((k, v) => window[k] = v)
+            </script>
+            <script type="module" src="./pages//*=-path-=*/.js"></script>
+		</section>
+	</body>
+</html>
