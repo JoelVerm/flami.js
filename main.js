@@ -62,12 +62,12 @@ async function render(rr) {
 	} else {
 		rr.mimeType = getMIMEtype('.html')
 		let htmlPath = pathModule.join(__dirname, 'page.html')
-		let serverPath = pathModule.join(__dirname, 'server', path)
+		let serverPath = pathModule.join(__dirname, 'server', path + '.js')
 		let pagePath = pathModule.join(__dirname, 'pages', path + '.js')
 		if (!existsSync(pagePath)) throw new Error(`no page at ${path}`)
 		let vars = {}
 		if (existsSync(serverPath)) {
-			let callback = (await import(serverPath)).flami
+			let callback = (await import(`./server${path}.js`)).flami
 			vars = callback(rr)
 			if (!rr.active) return false
 			if (serverPath.includes('api')) return JSON.stringify(vars)
