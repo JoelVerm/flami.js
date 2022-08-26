@@ -10,17 +10,16 @@
 	<body>
 		<script>
 			let html = uhtml.html
-			let html_template, html_values
-			function flami(template, ...values) {
-				html_template = template
-				html_values = values
+			let flami_f
+			function flami(f) {
+				flami_f = f
 				update()
 			}
 
 			function update() {
 				uhtml.render(
 					document.querySelector('#flami-content'),
-					html(html_template, ...html_values)
+					flami_f()
 				)
 			}
 		</script>
