@@ -242,7 +242,7 @@ async function handleReq(req, res) {
 }
 
 export const serverOptions = {
-	maxRequestsPerSecond: 20,
+	maxRequestsPerSecond: 100,
 	DDOStimeoutMinutes: 5,
 	port: 80
 }
