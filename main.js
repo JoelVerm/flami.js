@@ -74,6 +74,7 @@ async function render(rr) {
 		}
 		let text = (await promises.readFile(htmlPath)).toString('utf8')
 		text = text
+            .replace('/*=-title-=*/', rr.path == '/'? 'Home' : path.split('/').at(-1))
 			.replace('/*=-vars-=*/', JSON.stringify(vars))
 			.replace('/*=-path-=*/', path.split('/').at(-1))
 		return text
