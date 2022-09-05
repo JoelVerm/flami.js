@@ -118,7 +118,7 @@ function getMIMEtype(path) {
 	)
 }
 
-class RunningRequest {
+export class RunningRequest {
 	/**
 	 * @param {http.IncomingMessage} req
 	 * @param {http.ServerResponse} res
