@@ -68,7 +68,7 @@ async function render(rr) {
 		let vars = {}
 		if (existsSync(serverPath)) {
 			let callback = (await import(`./server${path}.js`)).flami
-			vars = callback(rr)
+			vars = await callback(rr)
 			if (!rr.active) return false
 			if (serverPath.includes('api')) return JSON.stringify(vars)
 		}
