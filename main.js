@@ -74,7 +74,10 @@ async function render(rr) {
 		}
 		let text = (await promises.readFile(htmlPath)).toString('utf8')
 		text = text
-            .replace('/*=-title-=*/', rr.path == '/'? 'Home' : path.split('/').at(-1))
+			.replace(
+				'/*=-title-=*/',
+				rr.path == '/' ? 'Home' : path.split('/').at(-1)
+			)
 			.replace('/*=-vars-=*/', JSON.stringify(vars))
 			.replace('/*=-path-=*/', path.split('/').at(-1))
 		return text
@@ -249,6 +252,12 @@ export const serverOptions = {
 
 function start() {
 	let httpServer = createServer(handleReq)
-	httpServer.listen(serverOptions.port)
+	httpServer.listen(serverOptions.port, () =>
+		console.log(
+			`listening on ${httpServer.address().address}:${
+				httpServer.address().port
+			}`
+		)
+	)
 }
 start()
