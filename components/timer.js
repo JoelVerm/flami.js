@@ -3,8 +3,7 @@ let time = 0
 setInterval(update, 1000)
 let running = false
 const value = () => {
-    if (running)
-        return time + new Date().getSeconds() - lastPauseTime
+    if (running) return time + new Date().getSeconds() - lastPauseTime
     return time
 }
 const start = () => {
@@ -22,10 +21,10 @@ const reset = () => {
 }
 
 export const timer = () => html`
-        <div>
-            <h1>${value}</h1>
-            <button onClick=${start}>start</button>
-            <button onClick=${stop}>stop</button>
-            <button onClick=${reset}>reset</button>
-        </div>
-    `
+    <div>
+        <h1>${value}</h1>
+        <button onClick=${start}>start</button>
+        <button onClick=${stop}>stop</button>
+        <button onClick=${reset}>reset</button>
+    </div>
+`

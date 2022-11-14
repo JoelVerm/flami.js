@@ -1,4 +1,4 @@
 {
-	"ignore": ["./db.json"],
+    "ignore": ["./db.json"],
     "ext": "js html css"
 }
