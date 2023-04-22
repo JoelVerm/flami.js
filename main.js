@@ -4,10 +4,14 @@ import { promises, existsSync } from 'fs'
 import qs from 'querystring'
 import { URL } from 'url'
 import { spawn } from 'child_process'
+import process from 'process'
 
 import * as pathModule from 'path'
 import { fileURLToPath } from 'url'
-const __dirname = pathModule.dirname(fileURLToPath(import.meta.url))
+let __dirname = pathModule.dirname(fileURLToPath(import.meta.url))
+
+let args = process.argv
+if (args[2]) __dirname = args[2]
 
 const flattenValues = obj =>
     Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, v.flat()]))
@@ -66,10 +70,14 @@ async function render(path) {
         .find(e => e.startsWith(basePath))
         ?.slice(basePath.length)
     if (serverFileExtension) {
-        console.log(`./server/${path}${serverFileExtension}`)
-        const serverProgram = spawn(`./server/${path}${serverFileExtension}`, [
-            ''
-        ])
+        const serverProgram = spawn(
+            pathModule.join(
+                __dirname,
+                'server',
+                `${path}${serverFileExtension}`
+            ),
+            ['']
+        )
         serverResponse = await new Promise((resolve, reject) => {
             serverProgram.stdout.on('data', data => resolve(data.toString()))
             serverProgram.stderr.on('data', data => reject(data.toString()))
@@ -202,9 +210,7 @@ async function handleReq(req, res) {
     let mimeType = getMIMEtype(path)
 
     try {
-        console.log(path)
         let response = await render(path, { searchParams, postData, cookies })
-        console.log(path, response)
         if (!response) return
         if (response.redirect) {
             this.res.writeHead(302, {
