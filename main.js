@@ -3,45 +3,25 @@ import { Buffer } from 'buffer'
 import { promises, existsSync } from 'fs'
 import qs from 'querystring'
 import { URL } from 'url'
+import { spawn } from 'child_process'
 
 import * as pathModule from 'path'
 import { fileURLToPath } from 'url'
 const __dirname = pathModule.dirname(fileURLToPath(import.meta.url))
 
-/**
- * HTML escape a string
- * @param {String} s string to HTML escape
- * @returns {String} escaped string
- */
-const escapeHTML = s =>
-    s.replace(/[^0-9A-Za-z ]/g, c => '&#' + c.charCodeAt(0) + ';')
-/**
- * HTML escape an object
- * @param {Object} obj object to HTML escape
- * @returns {Object} object with HTML escaped strings
- */
-const objEscapeHTML = obj =>
-    Object.entries(obj).reduce((obj, e) => {
-        obj[e[0]] = escapeHTML(e[1])
-        return obj
-    }, {})
+const flattenValues = obj =>
+    Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, v.flat()]))
 
-/**
- * Flatten an array and return the first non-array element
- * @param {Array} a
- * @returns {any}
- */
-const arrToFlat = a => (Array.isArray(a) ? arrToFlat(a[0]) : a)
-/**
- * flatten arrays in an object - returns the first non-array element for each value in the object
- * @param {Object<Array>} obj object with arrays to flatten as values
- * @returns {Object<Array>} object with flattened arrays as values
- */
-const flatten = obj =>
-    Object.entries(obj).reduce((obj, e) => {
-        obj[e[0]] = arrToFlat(e[1])
-        return obj
-    }, {})
+let htmlPagePath = pathModule.join(__dirname, 'page.html')
+let htmlPageText = (await promises.readFile(htmlPagePath)).toString('utf8')
+const renderHtml = (path, vars) =>
+    htmlPageText
+        .replace(
+            '/*=-title-=*/',
+            path == '/index' ? 'Home' : path.split('/').at(-1)
+        )
+        .replace('/*=-path-=*/', path.split('/').at(-1))
+        .replace('/*=-vars-=*/', JSON.stringify(vars))
 
 const cachedFiles = {}
 /**
@@ -49,54 +29,61 @@ const cachedFiles = {}
  * @returns {Promise<Buffer>}
  */
 async function getFile(filePath) {
-    if (!cachedFiles[filePath])
-        cachedFiles[filePath] = await promises.readFile(filePath)
+    if (!cachedFiles[filePath]) {
+        let file = await promises.readFile(filePath).catch(() => '')
+        if (file) cachedFiles[filePath] = file
+        else return null
+    }
     return cachedFiles[filePath]
 }
 
-let htmlPagePath = pathModule.join(__dirname, 'page.html')
-let htmlPageText = (await promises.readFile(htmlPagePath)).toString('utf8')
-const preRenderedPages = {}
-async function getRenderedPage(path, vars) {
-    if (!preRenderedPages[path])
-        preRenderedPages[path] = htmlPageText
-            .replace(
-                '/*=-title-=*/',
-                path == '/index' ? 'Home' : path.split('/').at(-1)
-            )
-            .replace('/*=-path-=*/', path.split('/').at(-1))
-    return preRenderedPages[path].replace('/*=-vars-=*/', JSON.stringify(vars))
-}
-
 /**
- * @param {RunningRequest} rr
+ * @param {String} path
  */
-async function render(rr) {
-    let path = rr.path == '/' ? '/index' : rr.path
-    if (path.split('/').at(-1).includes('.')) {
-        if (
-            (path.startsWith('/pages/') || path.startsWith('/components/')) &&
-            path.endsWith('.js')
-        ) {
-            let filePath = pathModule.join(__dirname, path)
-            return getFile(filePath)
-        }
-        let filePath = pathModule.join(__dirname, 'static', path)
-        return getFile(filePath)
-    } else {
-        rr.mimeType = getMIMEtype('.html')
-        let serverPath = pathModule.join(__dirname, 'server', path + '.js')
-        let pagePath = pathModule.join(__dirname, 'pages', path + '.js')
-        if (!existsSync(pagePath)) throw new Error(`no page at ${path}`)
-        let vars = {}
-        if (existsSync(serverPath)) {
-            let callback = (await import(`./server${path}.js`)).flami
-            vars = await callback(rr)
-            if (!rr.active) return false
-            if (serverPath.includes('api')) return JSON.stringify(vars)
-        }
-        return getRenderedPage(path, vars)
+async function render(path) {
+    path = path == '/' ? '/index' : path
+    if (path.startsWith('/pages/') || path.startsWith('/components/')) {
+        if (!path.endsWith('.js')) return null
+        let fullPath = pathModule.join(__dirname, path)
+        let file = await getFile(fullPath)
+        if (!file) return null
+        return { content: file }
     }
+    if (path.startsWith('/static/')) {
+        let fullPath = pathModule.join(__dirname, path)
+        let file = await getFile(fullPath)
+        if (!file) return null
+        return { content: file }
+    }
+
+    let pagePath = pathModule.join(__dirname, 'pages', path + '.js')
+    if (!existsSync(pagePath)) return null
+    let serverPath = pathModule.join(__dirname, 'server', path)
+    let serverResponse = ''
+    const dirContents = await promises.readdir(pathModule.dirname(serverPath))
+    const basePath = pathModule.basename(serverPath)
+    const serverFileExtension = dirContents
+        .find(e => e.startsWith(basePath))
+        ?.slice(basePath.length)
+    if (serverFileExtension) {
+        console.log(`./server/${path}${serverFileExtension}`)
+        const serverProgram = spawn(`./server/${path}${serverFileExtension}`, [
+            ''
+        ])
+        serverResponse = await new Promise((resolve, reject) => {
+            serverProgram.stdout.on('data', data => resolve(data.toString()))
+            serverProgram.stderr.on('data', data => reject(data.toString()))
+        })
+    }
+    let response = {}
+    try {
+        response = JSON.parse(serverResponse)
+    } catch {
+        response.content = serverResponse
+    }
+    if (!path.includes('api'))
+        response.content = renderHtml(path, response.content)
+    return response
 }
 
 /** @param {string} path */
@@ -132,88 +119,8 @@ function getMIMEtype(path) {
             '.gz': 'application/x-gzip',
             '.bz2': 'application/x-bzip2',
             '.xz': 'application/x-xz'
-        }[path.slice(path.lastIndexOf('.'))] || 'text/plain'
+        }[path.slice(path.lastIndexOf('.'))] || 'text/html'
     )
-}
-
-export class RunningRequest {
-    /**
-     * @param {http.IncomingMessage} req
-     * @param {http.ServerResponse} res
-     */
-    constructor(req, res) {
-        this.active = true
-        this.req = req
-        this.res = res
-        this.ip = req.socket.remoteAddress
-        this.url = new URL(req.url, `http://${req.headers.host}`)
-        this.path = this.url.pathname
-        this.params = flatten(
-            Object.fromEntries(this.url.searchParams.entries())
-        )
-        this.mimeType = getMIMEtype(this.path)
-        this.escapeHTML = escapeHTML
-        this.objEscapeHTML = objEscapeHTML
-        this.flatten = flatten
-    }
-    /** @returns {Promise<qs.ParsedUrlQuery>} post data */
-    async getPostData() {
-        const buffers = []
-        for await (const chunk of this.req) {
-            buffers.push(chunk)
-        }
-        const data = Buffer.concat(buffers).toString()
-        return qs.parse(data)
-    }
-    /**
-     * @param {String} name
-     * @returns {Promise<String>} cookie value
-     */
-    async getCookie(name) {
-        const cookies = this.req.headers.cookie
-        if (!cookies) return null
-        const cookie = cookies
-            .split(';')
-            .find(c => c.trim().startsWith(name + '='))
-        if (!cookie) return null
-        const cookieSplit = cookie.split('=')
-        cookieSplit.shift()
-        return cookieSplit.join('=')
-    }
-
-    async setCookie(
-        name,
-        value,
-        expires = null,
-        path = null,
-        secure = false,
-        httpOnly = true,
-        domain = null,
-        maxAge = null,
-        sameSite = null
-    ) {
-        let cookie =
-            `${name || ''}=${value || ''}` +
-            (expires != null
-                ? `; Expires=${new Date(expires).toUTCString()}`
-                : '') +
-            (maxAge != null ? `; Max-Age=${maxAge}` : '') +
-            (domain != null ? `; Domain=${domain}` : '') +
-            (path != null ? `; Path=${path}` : '') +
-            (secure ? '; Secure' : '') +
-            (httpOnly ? '; HttpOnly' : '') +
-            (sameSite != null ? `; SameSite=${sameSite}` : '')
-        this.res.setHeader('Set-Cookie', cookie)
-    }
-
-    /** @param {String} location */
-    async redirect(location) {
-        this.res.writeHead(302, {
-            Location: location
-        })
-        this.res.end()
-        this.active = false
-    }
 }
 
 class RequestCounter extends Array {
@@ -222,36 +129,100 @@ class RequestCounter extends Array {
         while (this[0] < Date.now() - 1000) this.shift()
         if (this.length > serverOptions.maxRequestsPerSecond)
             this.timeoutUntil =
-                Date.now() + serverOptions.DDOStimeoutMinutes * 60 * 1000
+                Date.now() + serverOptions.timeoutMinutes * 60 * 1000
     }
     isInvalid() {
         return this.timeoutUntil && this.timeoutUntil > Date.now()
     }
 }
 const reqIPs = {}
+
+async function getPostData(req) {
+    const buffers = []
+    for await (const chunk of req) {
+        buffers.push(chunk)
+    }
+    const data = Buffer.concat(buffers).toString()
+    return qs.parse(data)
+}
+
+function getCookies(req) {
+    const cookies = req.headers.cookie
+    if (!cookies) return {}
+    return Object.fromEntries(
+        cookies.split(';').map(e => {
+            let splits = e.split('=')
+            return [splits.shift(), splits.join('=')]
+        })
+    )
+}
+
+const createCookie = async ({
+    name,
+    value,
+    expires = null,
+    path = null,
+    secure = false,
+    httpOnly = true,
+    domain = null,
+    maxAge = null,
+    sameSite = null
+}) =>
+    `${name || ''}=${value || ''}` +
+    (expires != null ? `; Expires=${new Date(expires).toUTCString()}` : '') +
+    (maxAge != null ? `; Max-Age=${maxAge}` : '') +
+    (domain != null ? `; Domain=${domain}` : '') +
+    (path != null ? `; Path=${path}` : '') +
+    (secure ? '; Secure' : '') +
+    (httpOnly ? '; HttpOnly' : '') +
+    (sameSite != null ? `; SameSite=${sameSite}` : '')
+
 /** @param {http.IncomingMessage} req @param {http.ServerResponse} res */
 async function handleReq(req, res) {
-    if (!reqIPs[req.socket.remoteAddress])
-        reqIPs[req.socket.remoteAddress] = new RequestCounter()
-    reqIPs[req.socket.remoteAddress].tick()
-    if (reqIPs[req.socket.remoteAddress].isInvalid()) {
-        console.log(`access denied to ${req.socket.remoteAddress} for spamming`)
+    let ip = req.socket.remoteAddress
+    if (!reqIPs[ip]) reqIPs[ip] = new RequestCounter()
+    reqIPs[ip].tick()
+    if (reqIPs[ip].isInvalid()) {
+        /* global console */
+        console.log(`access denied to ${ip} for spamming`)
         res.writeHead(429, {
-            'Retry-After': serverOptions.DDOStimeoutMinutes / 60
+            'Retry-After': serverOptions.timeoutMinutes / 60
         })
         res.end()
         return
     }
 
-    const rr = new RunningRequest(req, res)
+    let url = new URL(req.url, `http://${req.headers.host}`)
+    let path = url.pathname
+    let searchParams = flattenValues(
+        Object.fromEntries(url.searchParams.entries())
+    )
+    let postData = await getPostData(req)
+    let cookies = getCookies(req)
+    let mimeType = getMIMEtype(path)
 
     try {
-        let response = await render(rr)
+        console.log(path)
+        let response = await render(path, { searchParams, postData, cookies })
+        console.log(path, response)
         if (!response) return
+        if (response.redirect) {
+            this.res.writeHead(302, {
+                Location: response.redirect
+            })
+            this.res.end()
+            return
+        }
+        if (response.cookies) {
+            response.cookies.forEach(cookie =>
+                res.setHeader('Set-Cookie', createCookie(cookie))
+            )
+        }
         res.writeHead(200, {
-            'Content-Type': rr.mimeType + '; charset=utf-8'
+            'Content-Type': mimeType + '; charset=utf-8',
+            ...(response.headers ?? {})
         })
-        res.end(response)
+        res.end(response.content)
     } catch (err) {
         console.error(err)
         res.writeHead(404)
@@ -261,8 +232,8 @@ async function handleReq(req, res) {
 
 export const serverOptions = {
     maxRequestsPerSecond: 100,
-    DDOStimeoutMinutes: 5,
-    port: 80
+    timeoutMinutes: 5,
+    port: 8000
 }
 
 function start() {

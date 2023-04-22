@@ -1,8 +1,7 @@
-/**
- * @param {import('../main.js').RunningRequest} req
- */
-export async function flami(req) {
-    return {
-        foo: 12345
-    }
-}
+#!/usr/bin/env node
+
+console.log(
+    JSON.stringify({
+        content: 'lalala'
+    })
+)
