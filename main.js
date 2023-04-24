@@ -1,18 +1,22 @@
+#!/usr/bin/env node
 import { createServer } from 'http'
 import { Buffer } from 'buffer'
 import { promises, existsSync } from 'fs'
 import qs from 'querystring'
 import { URL } from 'url'
 import { spawn } from 'child_process'
+import process from 'process'
 
 import * as pathModule from 'path'
-import { fileURLToPath } from 'url'
-const __dirname = pathModule.dirname(fileURLToPath(import.meta.url))
+let serverDirName = './'
+
+let args = process.argv
+if (args[2]) serverDirName = args[2]
 
 const flattenValues = obj =>
     Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, v.flat()]))
 
-let htmlPagePath = pathModule.join(__dirname, 'page.html')
+let htmlPagePath = pathModule.join(serverDirName, 'page.html')
 let htmlPageText = (await promises.readFile(htmlPagePath)).toString('utf8')
 const renderHtml = (path, vars) =>
     htmlPageText
@@ -44,21 +48,21 @@ async function render(path) {
     path = path == '/' ? '/index' : path
     if (path.startsWith('/pages/') || path.startsWith('/components/')) {
         if (!path.endsWith('.js')) return null
-        let fullPath = pathModule.join(__dirname, path)
+        let fullPath = pathModule.join(serverDirName, path)
         let file = await getFile(fullPath)
         if (!file) return null
         return { content: file }
     }
     if (path.startsWith('/static/')) {
-        let fullPath = pathModule.join(__dirname, path)
+        let fullPath = pathModule.join(serverDirName, path)
         let file = await getFile(fullPath)
         if (!file) return null
         return { content: file }
     }
 
-    let pagePath = pathModule.join(__dirname, 'pages', path + '.js')
+    let pagePath = pathModule.join(serverDirName, 'pages', path + '.js')
     if (!existsSync(pagePath)) return null
-    let serverPath = pathModule.join(__dirname, 'server', path)
+    let serverPath = pathModule.join(serverDirName, 'server', path)
     let serverResponse = ''
     const dirContents = await promises.readdir(pathModule.dirname(serverPath))
     const basePath = pathModule.basename(serverPath)
@@ -66,10 +70,14 @@ async function render(path) {
         .find(e => e.startsWith(basePath))
         ?.slice(basePath.length)
     if (serverFileExtension) {
-        console.log(`./server/${path}${serverFileExtension}`)
-        const serverProgram = spawn(`./server/${path}${serverFileExtension}`, [
-            ''
-        ])
+        const serverProgram = spawn(
+            pathModule.join(
+                serverDirName,
+                'server',
+                `${path}${serverFileExtension}`
+            ),
+            ['']
+        )
         serverResponse = await new Promise((resolve, reject) => {
             serverProgram.stdout.on('data', data => resolve(data.toString()))
             serverProgram.stderr.on('data', data => reject(data.toString()))
@@ -202,9 +210,7 @@ async function handleReq(req, res) {
     let mimeType = getMIMEtype(path)
 
     try {
-        console.log(path)
         let response = await render(path, { searchParams, postData, cookies })
-        console.log(path, response)
         if (!response) return
         if (response.redirect) {
             this.res.writeHead(302, {
